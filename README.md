@@ -2,16 +2,35 @@
 
 > **Every scam leaves a trace. Its victims are that trace.**
 
-Before you pay, your bank shows you a name. It won't tell you that three people sent
-money to that same name last week and never heard back. That history already exists, but
-it lives with the victims, scattered across WhatsApp groups, X threads and complaints
-stuck inside banks, where nobody can look it up before paying.
+### Information you can trust starts with your money
 
-**TRACE puts that history in one place.** Check a Nigerian account before you send money
-and see the name *and* its record: how many people have reported it, what happened to
-them, and a clear, explainable risk signal. If the money has already gone, TRACE walks
-you through the first hour: who to call, what to say, and how to escalate when your bank
-goes quiet. Every report becomes the warning the next person sees.
+"Information" is a broad word, but one kind feels like it should be common knowledge:
+*is this account safe to pay?* In Nigeria, that information is missing. Your bank shows
+you the name on an account, not its history, and a scammer's account has a real name too.
+
+Financial fraud reaches Nigerians every day, through fake sellers, fake agents, fake
+investments and stolen data. Even people who realise they've been scammed often take the
+wrong first steps: they fill in web forms, wait, or call a fake "helpline". By the time
+anything concrete happens, the money has moved and the scammer is gone.
+
+### TRACE fixes both ends
+
+- **Before you pay:** check any account and see how many people have reported it, with a
+  clear risk signal that AI never sets.
+- **After a scam:** TRACE walks you through the first hour. Call your own bank, ask for a
+  Post No Debit to freeze the money, file it in writing, and escalate to the CBN if the
+  bank goes quiet.
+
+### Built for everyone
+
+| | |
+|---|---|
+| 💬 **Accessible** | A WhatsApp bot, with no app to download, plus an installable web app that works on any phone |
+| 🌍 **Multilingual** | English, Pidgin, Yorùbá, Hausa and Igbo |
+| 🤖 **AI-assisted** | Send a screenshot or voice note instead of typing; AI reads it and does the language work |
+| ⚡ **Fast** | A check takes seconds |
+
+**Every report becomes the next person's warning.**
 
 **Live demo:** https://trace2-lake.vercel.app — try GTBank `0123456789` (sample account, HIGH risk)
 
