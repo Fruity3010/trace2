@@ -279,7 +279,9 @@ const EXTRACT_PROMPT = `You read screenshots and photos that Nigerians receive w
 
 Find every Nigerian bank account number shown as a place to send money. Account numbers have 10 digits, often written with spaces or dashes (e.g. "0123 456 789"). For each, give the digits and the bank name written near it, or null if no bank is shown.
 
-Do NOT return phone numbers (11 digits starting with 0, or starting with +234), amounts, dates or reference codes. Copy digits exactly and never invent a missing digit. Return JSON only.`;
+If the image is a transfer receipt or debit alert, also give, for that account, the amount sent in naira (a plain number) and the bank or app it was sent FROM (the sender's bank, not the recipient's). Otherwise leave both null.
+
+Never return phone numbers (11 digits starting with 0, or starting with +234), amounts, dates or reference codes as account numbers. Copy digits exactly and never invent a missing digit. Return JSON only.`;
 
 const EXTRACT_SCHEMA = {
   type: 'object',
@@ -288,7 +290,12 @@ const EXTRACT_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { accountNumber: { type: 'string' }, bankName: { type: 'string', nullable: true } },
+        properties: {
+          accountNumber: { type: 'string' },
+          bankName: { type: 'string', nullable: true },
+          amountSent: { type: 'number', nullable: true },
+          senderBank: { type: 'string', nullable: true },
+        },
         required: ['accountNumber'],
       },
     },
@@ -357,18 +364,19 @@ export async function transcribeAudio(audio: Buffer, mime: string, timeoutMs = 2
  * checked or reported: a single misread digit would point at someone else's account.
  * Returns null when reading isn't possible (no Gemini key, timeout, unreadable).
  */
-export async function extractAccounts(image: Buffer, mime: string, timeoutMs = 15_000): Promise<{ accountNumber: string; bank: Bank | null }[] | null> {
+export async function extractAccounts(image: Buffer, mime: string, timeoutMs = 15_000): Promise<{ accountNumber: string; bank: Bank | null; amount: number | null; fromBank: Bank | null }[] | null> {
   if (!IMAGE_TYPES.test(mime) || image.length > 8 * 1024 * 1024) return null;
   const ai = await gemini(EXTRACT_PROMPT, [
     { inline_data: { mime_type: mime, data: image.toString('base64') } },
     { text: 'List the account numbers in this image.' },
-  ], EXTRACT_SCHEMA, timeoutMs) as { accounts?: { accountNumber?: unknown; bankName?: unknown }[] } | null;
+  ], EXTRACT_SCHEMA, timeoutMs) as { accounts?: { accountNumber?: unknown; bankName?: unknown; amountSent?: unknown; senderBank?: unknown }[] } | null;
   if (!ai || !Array.isArray(ai.accounts)) return null;
   const seen = new Set<string>();
   return ai.accounts.flatMap((a) => {
     const accountNumber = normalizeAccount(typeof a.accountNumber === 'string' ? a.accountNumber : '');
     if (!accountNumber || seen.has(accountNumber)) return [];
     seen.add(accountNumber);
-    return [{ accountNumber, bank: findBank(a.bankName) }];
+    const amount = typeof a.amountSent === 'number' && a.amountSent >= 1 ? Math.round(a.amountSent) : null;
+    return [{ accountNumber, bank: findBank(a.bankName), amount, fromBank: findBank(a.senderBank) }];
   }).slice(0, 5);
 }

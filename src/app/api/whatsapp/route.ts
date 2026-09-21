@@ -15,23 +15,25 @@ import {
 import { resolveAccount } from '@/lib/paystack';
 import { Bank, BANKS, CATEGORIES, Classification, findBank, formatDate, Intelligence, n, POPULAR_BANKS, Verification } from '@/lib/shared';
 
-type Found = { accountNumber: string; bank: Bank | null };
+type Found = { accountNumber: string; bank: Bank | null; amount?: number | null; fromBank?: Bank | null };
+/** Scam-flow details the victim gave before we asked for them ("I lost 100,000 naira", a receipt). */
+type Pre = { amount?: number | null; victimBank?: Bank | null };
 type State =
   | { step: 'menu' }
   | { step: 'check_number' }
   | { step: 'check_bank'; number: string }
   | { step: 'after_check'; number: string; bank: Bank }
-  | { step: 'pick_found'; found: Found[]; purpose: 'check' | 'report' | 'escalate'; sentAt?: string }
+  | { step: 'pick_found'; found: Found[]; purpose: 'check' | 'report' | 'escalate'; sentAt?: string; pre?: Pre }
   | { step: 'report_number' }
   | { step: 'report_bank'; number: string; story?: string }
   | { step: 'report_story'; number: string; bank: Bank }
   | { step: 'report_confirm'; number: string; bank: Bank; story: string; c: Classification; hasMedia: boolean }
   // Escalation: someone has already lost money. Helping them comes first; the
   // report falls out of the same answers at the end.
-  | { step: 'esc_when' }
-  | { step: 'esc_date' }
-  | { step: 'esc_number'; sentAt: string }
-  | { step: 'esc_bank'; sentAt: string; number: string }
+  | { step: 'esc_when'; pre?: Pre }
+  | { step: 'esc_date'; pre?: Pre }
+  | { step: 'esc_number'; sentAt: string; pre?: Pre }
+  | { step: 'esc_bank'; sentAt: string; number: string; pre?: Pre }
   | { step: 'esc_amount'; f: Facts }
   | { step: 'esc_my_bank'; f: Facts }
   | { step: 'esc_call'; caseId: string; f: Facts }
@@ -87,17 +89,39 @@ const LANG_MENU = keep(`🌍 *Choose your language*\n\n${LANGUAGES.map((l, i) =>
  * A bank treats "I think I was scammed" and "this account has 7 complaints against
  * it" very differently, so the victim gets to use the database on the call.
  */
-function facts(sentAt: string, accountNumber: string, bank: Bank): Facts {
+function facts(sentAt: string, accountNumber: string, bank: Bank, pre?: Pre): Facts {
   const i = checkAccount(bank, accountNumber, 'whatsapp');
-  return { accountNumber, bank, victimBank: null, amount: null, sentAt, reports: i.reports, reporters: i.uniqueReporters };
+  return { accountNumber, bank, victimBank: pre?.victimBank ?? null, amount: pre?.amount ?? null, sentAt, reports: i.reports, reporters: i.uniqueReporters };
 }
 
-function askAmount(number: string, bank: Bank): string {
-  const i = checkAccount(bank, number, 'whatsapp');
-  const known = i.reports > 0
-    ? [`⚠️ *${n(i.uniqueReporters)} ${i.uniqueReporters === 1 ? 'person has' : 'people have'} already reported this account.*`, 'Tell your bank that — it is not just your word.', '']
+const ASK_MY_BANK = `Which bank did *you* send the money FROM?\n\n${BANK_MENU}\n\nOr type the bank name.`;
+
+/**
+ * The next scam-flow question, skipping whatever the victim already told us.
+ * `first` is the step right after the account is known: it may ask the amount and
+ * carries the warning when others have reported the account.
+ */
+function escNext(f: Facts, phone: string, first: boolean): [string, State] {
+  const known = first && f.reports
+    ? [`⚠️ *${n(f.reporters ?? 0)} ${f.reporters === 1 ? 'person has' : 'people have'} already reported this account.*`, 'Tell your bank that — it is not just your word.', '']
     : [];
-  return [...known, `How much did you send to ${number}?`, '', 'Just the amount, for example *45000*.', 'Reply *SKIP* if you would rather not say.'].join('\n');
+  if (first && f.amount == null) {
+    return [[...known, `How much did you send to ${f.accountNumber}?`, '', 'Just the amount, for example *45000*.', 'Reply *SKIP* if you would rather not say.'].join('\n'), { step: 'esc_amount', f }];
+  }
+  if (!f.victimBank) return [[...known, ASK_MY_BANK].join('\n'), { step: 'esc_my_bank', f }];
+  const c = openCase({ ...f, reporter: phone });
+  return [[...known, callStep(c.id, f)].join('\n'), { step: 'esc_call', caseId: c.id, f }];
+}
+
+/** A naira amount in free text: "₦45,000", "100,000 naira", "50k". A bare number is ignored — it may be an account number. */
+function amountIn(text: string): number | null {
+  for (const m of text.matchAll(/(₦|\bngn|\bn)?\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|thousand|million)?\s*(naira|ngn)?\b/gi)) {
+    if (!m[1] && !m[3] && !m[4]) continue;
+    const unit = m[3]?.toLowerCase();
+    const value = Number(m[2].replace(/,/g, '')) * (unit === 'k' || unit === 'thousand' ? 1e3 : unit ? 1e6 : 1);
+    if (value >= 1 && value < 1e10) return Math.round(value);
+  }
+  return null;
 }
 
 function nameLine(v: Verification, bank: Bank): string[] {
@@ -453,13 +477,13 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
     const found = await readImage(media, phone);
     if (typeof found === 'string') return [found, state];
     const purpose = state.step === 'report_number' ? 'report' : state.step === 'esc_number' ? 'escalate' : 'check';
-    const sentAt = state.step === 'esc_number' ? state.sentAt : undefined;
+    const [sentAt, pre] = state.step === 'esc_number' ? [state.sentAt, state.pre] : [undefined, undefined];
     const list = found.map((f, i) => `*${i + 1}* ${f.accountNumber}${f.bank ? ` · ${f.bank}` : ''}`).join('\n');
     return [
       found.length === 1
         ? `I found this in your image:\n\n${found[0].accountNumber}${found[0].bank ? ` · ${found[0].bank}` : ''}\n\nIs that right? Reply *YES*, or type the correct number.`
         : `I found these in your image:\n\n${list}\n\nReply with the number of the right one, or type the account number.`,
-      { step: 'pick_found', found, purpose, sentAt },
+      { step: 'pick_found', found, purpose, sentAt, pre },
     ];
   }
 
@@ -487,7 +511,7 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
         const { bank } = leadingBank(hit.rest ? hit.rest.split(' ') : []);
         return bank ? check(hit.number, bank, phone) : [askBank(hit.number), { step: 'check_bank', number: hit.number }];
       }
-      if (soundsScammed(text)) return [ASK_WHEN, { step: 'esc_when' }];
+      if (soundsScammed(text)) return [ASK_WHEN, { step: 'esc_when', pre: { amount: amountIn(text) } }];
       return [WELCOME, { step: 'menu' }];
     }
 
@@ -516,7 +540,7 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
       if (upper === '2') return ['What happened with this account? Type it or send a voice note, in any language.', { step: 'report_story', number: state.number, bank: state.bank }];
       const hit = findNumber(text);
       if (hit) return [askBank(hit.number), { step: 'check_bank', number: hit.number }];
-      if (soundsScammed(text)) return [ASK_WHEN, { step: 'esc_when' }];
+      if (soundsScammed(text)) return [ASK_WHEN, { step: 'esc_when', pre: { amount: amountIn(text) } }];
       return [WELCOME, { step: 'menu' }];
     }
 
@@ -534,9 +558,11 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
       if (!chosen) return ['Reply *YES*, the number of the right account, or type the account number.', state];
       if (state.purpose === 'escalate') {
         const sentAt = state.sentAt ?? new Date().toISOString();
+        // A receipt's own amount and sending bank beat what was said earlier.
+        const pre = { amount: chosen.amount ?? state.pre?.amount, victimBank: chosen.fromBank ?? state.pre?.victimBank };
         return chosen.bank
-          ? [askAmount(chosen.accountNumber, chosen.bank), { step: 'esc_amount', f: facts(sentAt, chosen.accountNumber, chosen.bank) }]
-          : [askBank(chosen.accountNumber), { step: 'esc_bank', sentAt, number: chosen.accountNumber }];
+          ? escNext(facts(sentAt, chosen.accountNumber, chosen.bank, pre), phone, true)
+          : [askBank(chosen.accountNumber), { step: 'esc_bank', sentAt, number: chosen.accountNumber, pre }];
       }
       if (!chosen.bank) {
         return [askBank(chosen.accountNumber), state.purpose === 'check' ? { step: 'check_bank', number: chosen.accountNumber } : { step: 'report_bank', number: chosen.accountNumber }];
@@ -555,9 +581,9 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
 
     case 'esc_when': {
       const now = Date.now();
-      if (upper === '1') return ['What account number did you send the money to?\n\nOr send a screenshot of the transfer.', { step: 'esc_number', sentAt: new Date(now - 30 * 60_000).toISOString() }];
-      if (upper === '2') return ['What account number did you send the money to?\n\nOr send a screenshot of the transfer.', { step: 'esc_number', sentAt: new Date(now - 6 * 3_600_000).toISOString() }];
-      if (upper === '3') return ['What date did you send it? For example *15/09/2026*.', { step: 'esc_date' }];
+      if (upper === '1') return ['What account number did you send the money to?\n\nOr send a screenshot of the transfer.', { step: 'esc_number', sentAt: new Date(now - 30 * 60_000).toISOString(), pre: state.pre }];
+      if (upper === '2') return ['What account number did you send the money to?\n\nOr send a screenshot of the transfer.', { step: 'esc_number', sentAt: new Date(now - 6 * 3_600_000).toISOString(), pre: state.pre }];
+      if (upper === '3') return ['What date did you send it? For example *15/09/2026*.', { step: 'esc_date', pre: state.pre }];
       return [ASK_WHEN, state];
     }
 
@@ -567,26 +593,26 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
       const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
       const d = new Date(Date.UTC(year, Number(m[2]) - 1, Number(m[1]), 12));
       if (Number.isNaN(d.getTime()) || d.getTime() > Date.now()) return ['That date does not look right. Please send it like *15/09/2026*.', state];
-      return ['What account number did you send the money to?\n\nOr send a screenshot of the transfer.', { step: 'esc_number', sentAt: d.toISOString() }];
+      return ['What account number did you send the money to?\n\nOr send a screenshot of the transfer.', { step: 'esc_number', sentAt: d.toISOString(), pre: state.pre }];
     }
 
     case 'esc_number': {
       const hit = findNumber(text);
       if (!hit) return ["That doesn't look like a 10-digit account number. Please try again.", state];
       const { bank } = leadingBank(hit.rest ? hit.rest.split(' ') : []);
-      if (bank) return [askAmount(hit.number, bank), { step: 'esc_amount', f: facts(state.sentAt, hit.number, bank) }];
-      return [askBank(hit.number), { step: 'esc_bank', sentAt: state.sentAt, number: hit.number }];
+      if (bank) return escNext(facts(state.sentAt, hit.number, bank, state.pre), phone, true);
+      return [askBank(hit.number), { step: 'esc_bank', sentAt: state.sentAt, number: hit.number, pre: state.pre }];
     }
 
     case 'esc_bank': {
       const bank = parseBank(text);
       if (!bank) return [`I didn't recognise that bank. Reply with a number:\n\n${BANK_MENU}\n\nOr type the full bank name.`, state];
-      return [askAmount(state.number, bank), { step: 'esc_amount', f: facts(state.sentAt, state.number, bank) }];
+      return escNext(facts(state.sentAt, state.number, bank, state.pre), phone, true);
     }
 
     case 'esc_amount': {
-      const amount = upper === 'SKIP' ? null : Number(text.replace(/[^\d]/g, '')) || null;
-      return [`Which bank did *you* send the money FROM?\n\n${BANK_MENU}\n\nOr type the bank name.`, { step: 'esc_my_bank', f: { ...state.f, amount } }];
+      const amount = upper === 'SKIP' ? null : amountIn(`₦${text}`) ?? (Number(text.replace(/[^\d]/g, '')) || null);
+      return escNext({ ...state.f, amount }, phone, false);
     }
 
     case 'esc_my_bank': {
