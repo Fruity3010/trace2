@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { verifyClassification } from '@/lib/ai';
+import { allowUse, SIGN_IN_REQUIRED } from '@/lib/auth';
 import { DATA_DIR } from '@/lib/db';
 import { addEvidence, peekAccount, reporterKey, reportsFor, submitReport } from '@/lib/engine';
 import { resolveAccount } from '@/lib/paystack';
@@ -60,6 +61,8 @@ export async function POST(req: Request) {
   if (!peekAccount(bank, accountNumber).sampleData && (await resolveAccount(accountNumber, bank, reporter)).status === 'not_found') {
     return NextResponse.json({ error: `${accountNumber} doesn't match an account at ${bank}. Check the number and bank.` }, { status: 400 });
   }
+
+  if (!allowUse(req)) return NextResponse.json(SIGN_IN_REQUIRED, { status: 401 });
 
   const anonymous = form.get('anonymous') !== 'false';
   const str = (k: string) => (anonymous ? null : String(form.get(k) ?? '').trim().slice(0, 120) || null);

@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Icon, IconName } from '@/components/Icons';
 import { HowTraceWorks, page, TopBar } from '@/components/ui';
-import { usePrefs } from '@/lib/store';
+import { deviceId, usePrefs } from '@/lib/store';
 import { botLink, LANGUAGES } from '@/lib/shared';
 
 type InstallEvent = Event & { prompt: () => Promise<void> };
@@ -16,6 +16,16 @@ export default function ProfilePage() {
   const [prefs, setPrefs] = usePrefs();
   const [install, setInstall] = useState<InstallEvent | null>(null);
   const whatsapp = botLink();
+  const [auth, setAuth] = useState<{ signedIn: boolean; freeLeft: number } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth', { headers: { 'x-trace-device': deviceId() } }).then((r) => r.json()).then(setAuth).catch(() => {});
+  }, []);
+
+  async function signOut() {
+    await fetch('/api/auth', { method: 'DELETE' }).catch(() => {});
+    setAuth((a) => a && { ...a, signedIn: false });
+  }
 
   useEffect(() => {
     const on = (e: Event) => { e.preventDefault(); setInstall(e as InstallEvent); };
@@ -29,7 +39,11 @@ export default function ProfilePage() {
       <div className="flex items-center gap-4 lg:pt-6">
                 <div>
           <h1 className="font-serif text-[30px] font-medium leading-tight">Your TRACE</h1>
-          <p className="text-[14px] text-ink-3">No account needed. Settings stay on this device.</p>
+          <p className="text-[14px] text-ink-3">
+            {!auth ? 'Settings stay on this device.'
+              : auth.signedIn ? <>Signed in. <button type="button" onClick={signOut} className="min-h-10 text-brand underline underline-offset-4">Sign out</button></>
+              : `${auth.freeLeft} free ${auth.freeLeft === 1 ? 'check or report' : 'checks and reports'} left before you need to sign in.`}
+          </p>
         </div>
       </div>
 

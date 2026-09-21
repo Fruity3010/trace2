@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Icon } from '@/components/Icons';
+import { SignIn } from '@/components/SignIn';
 import { btn, HowTraceWorks, Line, page, Rule, Stamp, TopBar } from '@/components/ui';
 import { deviceId } from '@/lib/store';
 import { CATEGORIES, formatDate, Intelligence, n, Risk, Verification } from '@/lib/shared';
@@ -16,15 +17,17 @@ export function AccountResult({ number, bank }: { number: string; bank: string |
   const [data, setData] = useState<(Intelligence & { verification: Verification }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [needSignIn, setNeedSignIn] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
     fetch('/api/check', { method: 'POST', headers: { 'content-type': 'application/json', 'x-trace-device': deviceId() }, body: JSON.stringify({ bank, accountNumber: number }) })
-      .then(async (r) => (await r.json()) as Intelligence & { verification: Verification; error?: string })
-      .then((d) => live && (d.error ? setError(d.error) : setData(d)))
+      .then(async (r) => (await r.json()) as Intelligence & { verification: Verification; error?: string; signIn?: boolean })
+      .then((d) => live && (d.signIn ? setNeedSignIn(true) : d.error ? setError(d.error) : setData(d)))
       .catch(() => live && setError('You appear to be offline. Try again when you have a connection.'));
     return () => { live = false; };
-  }, [number, bank]);
+  }, [number, bank, attempt]);
 
   if (error) {
     return (
@@ -35,6 +38,15 @@ export function AccountResult({ number, bank }: { number: string; bank: string |
           <p className="mt-1 text-[15px] text-ink-2">{error}</p>
           <Link href="/check" className={`${btn.primary} mt-5`}>Try again</Link>
         </div>
+      </div>
+    );
+  }
+
+  if (needSignIn) {
+    return (
+      <div className={`${page.narrow} animate-rise`}>
+        <TopBar back="/check" />
+        <SignIn onDone={() => { setNeedSignIn(false); setAttempt((a) => a + 1); }} />
       </div>
     );
   }

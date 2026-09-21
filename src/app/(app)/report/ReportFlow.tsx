@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { BankOptions } from '@/components/BankOptions';
 import { Icon } from '@/components/Icons';
+import { SignIn } from '@/components/SignIn';
 import { btn, page, TopBar } from '@/components/ui';
 import { VoiceButton } from '@/components/VoiceButton';
 import { deviceId, useLocal, usePrefs } from '@/lib/store';
@@ -25,6 +26,7 @@ export function ReportFlow({ initialAccount, initialBank }: { initialAccount: st
   const [question, setQuestion] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [submitted, setSubmitted] = useState<MyReport | null>(null);
+  const [needSignIn, setNeedSignIn] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const speech = LANGUAGES.find((l) => l.code === prefs.lang)?.speech ?? 'en-NG';
@@ -52,6 +54,7 @@ export function ReportFlow({ initialAccount, initialBank }: { initialAccount: st
       for (const f of files) { form.append('evidence', f); form.append('kind', kindOf(f)); }
       const res = await fetch('/api/reports', { method: 'POST', headers: { 'x-trace-device': deviceId() }, body: form });
       const data = await res.json();
+      if (data.signIn) { setNeedSignIn(true); return; }
       if (!res.ok) { setError(data.error ?? "Couldn't send. Try again."); return; }
       setDraft('');
       setSubmitted(data);
@@ -160,9 +163,11 @@ export function ReportFlow({ initialAccount, initialBank }: { initialAccount: st
 
       {error && <p role="alert" className="mt-3 rounded-2xl bg-high-wash p-3 text-[14px] text-high">{error}</p>}
 
-      <button type="button" onClick={send} disabled={!ready || busy} className={`${btn.primary} mt-5`}>
+      {needSignIn && <div className="mt-5"><SignIn onDone={() => { setNeedSignIn(false); send(); }} /></div>}
+
+      {!needSignIn && <button type="button" onClick={send} disabled={!ready || busy} className={`${btn.primary} mt-5`}>
         {busy ? <><span className="size-4 animate-spin rounded-full border-2 border-paper/30 border-t-paper" /> Sending…</> : 'Send report'}
-      </button>
+      </button>}
       <p className="mt-3 flex items-center justify-center gap-1.5 text-[12px] text-ink-3"><Icon name="lock" size={13} /> Proof is private and never shown publicly.</p>
     </div>
   );

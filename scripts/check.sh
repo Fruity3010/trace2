@@ -16,7 +16,9 @@ for _ in $(seq 1 60); do curl -s -o /dev/null "$BASE/api/check" && break; sleep 
 python3 - "$BASE" <<'PY'
 import base64, hashlib, hmac, json, random, sys, urllib.request, urllib.parse, uuid
 base = sys.argv[1]; fail = 0
-def req(path, body=None, headers={}, form=False):
+login = {}
+def req(path, body=None, headers={}, form=False, auth=True):
+    if auth and login: headers = {'cookie': login['cookie'], **headers}
     data = None
     if body is not None:
         data = urllib.parse.urlencode(body).encode() if form else json.dumps(body).encode()
@@ -31,6 +33,21 @@ def check(name, got, want):
     ok = got == want; fail |= not ok
     print(f"  {'ok  ' if ok else 'FAIL'} {name}: {got}" + ('' if ok else f" (want {want})"))
 
+# Sign-in: checks and reports are free 5 times per device, then need an account.
+newdev = {'x-trace-device': str(uuid.uuid4())}
+check('5 free checks', [req('/api/check', {'accountNumber': '9000000001'}, newdev, auth=False)[0] for _ in range(5)], [200] * 5)
+s6, b6 = req('/api/check', {'accountNumber': '9000000001'}, newdev, auth=False)
+check('6th check asks to sign in', (s6, json.loads(b6).get('signIn')), (401, True))
+check('rejects a non-Nigerian phone', req('/api/auth', {'phone': '12345', 'password': 'secret123'})[0], 400)
+check('rejects a short password', req('/api/auth', {'phone': '08031234567', 'password': '123'})[0], 400)
+with urllib.request.urlopen(urllib.request.Request(base + '/api/auth', json.dumps({'phone': '0803 123 4567', 'password': 'secret123'}).encode(), {'content-type': 'application/json'})) as r:
+    login['cookie'] = r.headers['set-cookie'].split(';')[0]
+    check('first sign-in creates the account', r.status, 200)
+check('same phone in another format, wrong password', req('/api/auth', {'phone': '+2348031234567', 'password': 'nope1234'}, auth=False)[0], 401)
+check('same phone, right password signs in', req('/api/auth', {'phone': '2348031234567', 'password': 'secret123'}, auth=False)[0], 200)
+check('signed in, checks keep working', req('/api/check', {'accountNumber': '9000000001'}, newdev)[0], 200)
+check('status shows signed in', json.loads(req('/api/auth', headers=newdev)[1])['signedIn'], True)
+
 acct = '9' + ''.join(random.choice('0123456789') for _ in range(9))
 check('unknown account is LOW', json.loads(req('/api/check', {'accountNumber': acct})[1])['risk'], 'LOW')
 
@@ -39,7 +56,7 @@ def report(device, text='I paid for an iPhone and the seller blocked me after re
     boundary = uuid.uuid4().hex
     fields = {'text': text, 'classification': json.dumps(c['classification']), 'token': c['token'], 'accountNumber': acct, 'bank': 'GTBank', 'anonymous': 'true'}
     body = ''.join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n' for k, v in fields.items()) + f'--{boundary}--\r\n'
-    r = urllib.request.Request(base + '/api/reports', body.encode(), {'content-type': f'multipart/form-data; boundary={boundary}', 'x-trace-device': device})
+    r = urllib.request.Request(base + '/api/reports', body.encode(), {'content-type': f'multipart/form-data; boundary={boundary}', 'x-trace-device': device, 'cookie': login['cookie']})
     try:
         with urllib.request.urlopen(r) as res: return json.loads(res.read())
     except urllib.error.HTTPError as e: return {'status': f'HTTP {e.code}'}
@@ -145,6 +162,10 @@ check('web rejects a future send date', case('/api/cases', {'sentAt': '2099-01-0
 s, v = case('/api/cases', {'sentAt': (datetime.datetime.utcnow() - datetime.timedelta(minutes=5)).isoformat() + 'Z',
                             'accountNumber': acct, 'bank': 'GTBank', 'victimBank': 'Kuda'}, who={'x-trace-device': d1})
 check('case after reporting links the report', (s, v['reportFiled']), (200, True))
+
+check('sign out', urllib.request.urlopen(urllib.request.Request(base + '/api/auth', method='DELETE', headers={'cookie': login['cookie']})).status, 200)
+s7, _ = req('/api/check', {'accountNumber': '9000000001'}, newdev)
+check('signed out, the limit applies again', s7, 401)
 
 sys.exit(fail)
 PY

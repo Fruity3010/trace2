@@ -99,6 +99,12 @@ CREATE INDEX IF NOT EXISTS cases_account ON cases (account_number);
 CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT NOT NULL, caller TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS rate_limits_lookup ON rate_limits (bucket, caller, created_at);
 
+-- Web accounts. phone is a keyed hash, never the number itself; sessions.token is a SHA-256 of the cookie.
+CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, phone TEXT NOT NULL UNIQUE, password TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL);
+-- Checks and reports used before signing in, per hashed device.
+CREATE TABLE IF NOT EXISTS free_uses (caller TEXT PRIMARY KEY, n INTEGER NOT NULL);
+
 CREATE TABLE IF NOT EXISTS wa_sessions (phone TEXT PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL);
 -- A chat's reply language outlives its 10-minute session. pinned = chosen with LANGUAGE, so detection leaves it alone.
 CREATE TABLE IF NOT EXISTS wa_prefs (phone TEXT PRIMARY KEY, lang TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, demo_until TEXT);
