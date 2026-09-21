@@ -167,6 +167,8 @@ fintechs) is a snapshot of Paystack's `GET /bank?country=nigeria`.
 People can send a screenshot instead of typing (web Check page, or WhatsApp).
 Gemini reads the account number and bank; the person always confirms before
 anything is checked, because one misread digit would point at someone else.
+If the image is a transfer receipt or debit alert, it also reads the amount sent and
+the bank it was sent from, so the first-hour flow doesn't ask for them again.
 Images used for reading are processed in memory and not stored.
 
 ### Voice notes
@@ -205,6 +207,11 @@ WhatsApp option **2** (or `HELP ME`), or **Get help** on the web (`/help`). Only
 (Post No Debit) placed on the beneficiary account, and only quickly, so the flow
 leads with a phone call and the exact words to say, then puts the same complaint in
 writing, then asks what happened — the report is a byproduct of getting help.
+
+On WhatsApp the flow only asks for what it doesn't already know. An amount in the
+opening message ("I was scammed of 100000", "₦45k", "100,000 naira", typed or spoken)
+is kept, and so are a receipt's amount and sending bank. A bare number counts as an
+amount unless it could be something else: an account or phone number, a date or a year.
 
 `REF <number>` stores the bank's complaint reference; `STATUS` re-checks the case and,
 once the bank has run out of time, prints a CBN escalation with the date and reference
@@ -250,8 +257,10 @@ WhatsApp is a short guided chat (state kept per hashed phone number for 10 minut
 bank (numbered list or typed name) → result with account name. Reporting continues with
 "what happened?" → AI summary → YES to submit. Shortcuts still work:
 `CHECK 0123456789 GTBank`, `REPORT 0123456789 GTBank what happened`, `MENU`.
-To connect: expose the server over HTTPS (e.g. `ngrok http 3000`) and set the Twilio
-sandbox "When a message comes in" URL to `https://<host>/api/whatsapp` (POST).
+To connect: expose the server over HTTPS (e.g. `ngrok http 3217`) and set the Twilio
+sandbox "When a message comes in" URL to `https://<host>/api/whatsapp` (POST). Free
+ngrok gives a new host each restart, so update Twilio each time. Don't use the Vercel
+deployment for WhatsApp; see [Hosting](#hosting).
 
 ### Privacy
 - `reports` holds only an HMAC of the reporter's device ID or phone number.
@@ -265,6 +274,13 @@ Runs anywhere with Node 22.13+ and a persistent disk (VPS, your own machine):
 The public demo runs on Vercel's free tier with `TRACE_DATA_DIR=/tmp`. Serverless
 storage is temporary, so the demo resets to sample data from time to time; a real
 deployment would use a persistent disk or swap SQLite for a hosted database.
+
+**WhatsApp needs a persistent server.** Vercel runs several short-lived instances, each
+with its own `/tmp`, and a chat's place in the conversation is stored in SQLite. When
+two messages land on different instances, the second one starts from the menu. The
+most visible symptom is a screenshot sent mid "I was scammed" coming back as a plain
+risk check. Until the database is hosted (Turso would be the drop-in), point Twilio
+at a machine with a disk: `npm run build && PORT=3217 npm start`, then `ngrok http 3217`.
 
 ## Status
 
