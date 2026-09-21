@@ -21,7 +21,7 @@ type State =
   | { step: 'check_number' }
   | { step: 'check_bank'; number: string }
   | { step: 'after_check'; number: string; bank: Bank }
-  | { step: 'pick_found'; found: Found[]; purpose: 'check' | 'report' }
+  | { step: 'pick_found'; found: Found[]; purpose: 'check' | 'report' | 'escalate'; sentAt?: string }
   | { step: 'report_number' }
   | { step: 'report_bank'; number: string; story?: string }
   | { step: 'report_story'; number: string; bank: Bank }
@@ -452,13 +452,14 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
   if (media) {
     const found = await readImage(media, phone);
     if (typeof found === 'string') return [found, state];
-    const purpose = state.step === 'report_number' ? 'report' : 'check';
+    const purpose = state.step === 'report_number' ? 'report' : state.step === 'esc_number' ? 'escalate' : 'check';
+    const sentAt = state.step === 'esc_number' ? state.sentAt : undefined;
     const list = found.map((f, i) => `*${i + 1}* ${f.accountNumber}${f.bank ? ` · ${f.bank}` : ''}`).join('\n');
     return [
       found.length === 1
         ? `I found this in your image:\n\n${found[0].accountNumber}${found[0].bank ? ` · ${found[0].bank}` : ''}\n\nIs that right? Reply *YES*, or type the correct number.`
         : `I found these in your image:\n\n${list}\n\nReply with the number of the right one, or type the account number.`,
-      { step: 'pick_found', found, purpose },
+      { step: 'pick_found', found, purpose, sentAt },
     ];
   }
 
@@ -531,6 +532,12 @@ async function converse(text: string, media: Media, phone: string): Promise<[str
       const typed = pick ? null : findNumber(text);
       const chosen: Found | null = pick ?? (typed ? { accountNumber: typed.number, bank: null } : null);
       if (!chosen) return ['Reply *YES*, the number of the right account, or type the account number.', state];
+      if (state.purpose === 'escalate') {
+        const sentAt = state.sentAt ?? new Date().toISOString();
+        return chosen.bank
+          ? [askAmount(chosen.accountNumber, chosen.bank), { step: 'esc_amount', f: facts(sentAt, chosen.accountNumber, chosen.bank) }]
+          : [askBank(chosen.accountNumber), { step: 'esc_bank', sentAt, number: chosen.accountNumber }];
+      }
       if (!chosen.bank) {
         return [askBank(chosen.accountNumber), state.purpose === 'check' ? { step: 'check_bank', number: chosen.accountNumber } : { step: 'report_bank', number: chosen.accountNumber }];
       }
