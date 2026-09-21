@@ -113,10 +113,17 @@ function escNext(f: Facts, phone: string, first: boolean): [string, State] {
   return [[...known, callStep(c.id, f)].join('\n'), { step: 'esc_call', caseId: c.id, f }];
 }
 
-/** A naira amount in free text: "₦45,000", "100,000 naira", "50k". A bare number is ignored — it may be an account number. */
+/**
+ * A naira amount in free text: "₦45,000", "100,000 naira", "50k", "100000". A bare number
+ * counts only if it can't be something else: not an account or phone number (10+ digits
+ * or a leading 0), a year, or a day or month.
+ */
 function amountIn(text: string): number | null {
   for (const m of text.matchAll(/(₦|\bngn|\bn)?\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|thousand|million)?\s*(naira|ngn)?\b/gi)) {
-    if (!m[1] && !m[3] && !m[4]) continue;
+    const bare = !m[1] && !m[3] && !m[4];
+    if (bare && !m[2].includes(',') && (!/^[1-9]\d{2,8}$/.test(m[2]) || /^(19|20)\d\d$/.test(m[2]))) continue;
+    // Part of a spaced-out number ("0801 234 5678"), not an amount.
+    if (bare && (/\d[\s-]*$/.test(text.slice(0, m.index)) || /^[\s-]*\d/.test(text.slice(m.index + m[0].length)))) continue;
     const unit = m[3]?.toLowerCase();
     const value = Number(m[2].replace(/,/g, '')) * (unit === 'k' || unit === 'thousand' ? 1e3 : unit ? 1e6 : 1);
     if (value >= 1 && value < 1e10) return Math.round(value);

@@ -111,6 +111,9 @@ A = 'whatsapp:+2340000000011'
 wa('MENU', sender=A); wa('I was scammed of 100,000 naira', sender=A); wa('1', sender=A)
 check('amount said up front is not asked again', 'FROM' in wa('0123456789 GTBank', sender=A), True)
 check('the call script uses that amount', '100,000' in wa('Access', sender=A), True)
+B = 'whatsapp:+2340000000012'
+wa('MENU', sender=B); wa('i was scammed of 100000', sender=B); wa('1', sender=B)
+check('a bare amount counts too', 'FROM' in wa('0123456789 GTBank', sender=B), True)
 check('LANGUAGE lists languages', 'Yorùbá' in wa('LANGUAGE', sender=S + '2'), True)
 check('picking a language falls back to English without AI', 'Reply with a number' in wa('3', sender=S + '2'), True)
 DM = 'whatsapp:+2340000000020'
