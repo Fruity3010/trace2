@@ -1,9 +1,17 @@
 # TRACE — Check before you trust
 
-**Check a Nigerian bank account before you send money to it.** TRACE tells you whose
-name is on the account and what other people have reported about it, as a clear,
-explainable risk signal. If the money has already gone, it walks you through the first
-hour: who to call, what to say, and how to escalate when the bank goes quiet.
+> **Every scam leaves a trace. Its victims are that trace.**
+
+Before you pay, your bank shows you a name. It won't tell you that three people sent
+money to that same name last week and never heard back. That history already exists, but
+it lives with the victims, scattered across WhatsApp groups, X threads and complaints
+stuck inside banks, where nobody can look it up before paying.
+
+**TRACE puts that history in one place.** Check a Nigerian account before you send money
+and see the name *and* its record: how many people have reported it, what happened to
+them, and a clear, explainable risk signal. If the money has already gone, TRACE walks
+you through the first hour: who to call, what to say, and how to escalate when your bank
+goes quiet. Every report becomes the warning the next person sees.
 
 **Live demo:** https://trace2-lake.vercel.app — try GTBank `0123456789` (sample account, HIGH risk)
 
@@ -21,9 +29,11 @@ investment "manager". Transfers are instant and practically irreversible.
 
 The information that would protect you already exists, but it is scattered and hidden:
 
-- **Victims know.** People who lost money to an account talk about it in WhatsApp
-  groups, on Twitter/X and Nairaland, but there is no place to look an account up
-  *before* paying.
+- **Your bank shows a name, not a history.** Name enquiry confirms who owns the account.
+  A scammer's account has a real name too, so a matching name proves nothing.
+- **Victims know.** Everyone who lost money to an account knows it's bad. They warn
+  each other in WhatsApp groups, on X and Nairaland, but there is no place to look an
+  account up *before* paying, so the next person pays anyway.
 - **Banks know, but don't share.** Complaints about a beneficiary account stay inside
   each bank. The person about to pay sees nothing.
 - **After a loss, nobody tells you what to do.** Money can sometimes be frozen with a
